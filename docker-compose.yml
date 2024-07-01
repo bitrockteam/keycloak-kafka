@@ -9,11 +9,16 @@ services:
     environment:
       KEYCLOAK_ADMIN: admin 
       KEYCLOAK_ADMIN_PASSWORD: admin
+      #KEYCLOAK_EXTRA_ARGS: --import-realm
       KAFKA_TOPIC: keycloak-events
       KAFKA_CLIENT_ID: keycloak
       KAFKA_BOOTSTRAP_SERVERS: kafka:9094
-    command: start-dev
-    
+      KAFKA_EVENTS: LOGIN,LOGOUT,LOGIN_ERROR
+    command: start-dev --import-realm
+    volumes:
+      - ./keycloak-realm/realm-export.json:/opt/keycloak/data/import/realm.json
+
+
   zookeeper:
     restart: always
     image: bitnami/zookeeper:latest
@@ -37,5 +42,23 @@ services:
       KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_CREATE_TOPICS: "keycloak-events:1:1"
       ALLOW_PLAINTEXT_LISTENER: "yes"
+
+  control-center:
+    image: confluentinc/cp-enterprise-control-center:7.3.3
+    hostname: control-center
+    container_name: control-center-kafka-plugin
+    depends_on:
+      - kafka
+    ports:
+      - "9021:9021"
+    environment:
+      CONTROL_CENTER_BOOTSTRAP_SERVERS: "kafka:9094"
+      CONTROL_CENTER_REPLICATION_FACTOR: 1
+      CONTROL_CENTER_INTERNAL_TOPICS_PARTITIONS: 1
+      CONTROL_CENTER_MONITORING_INTERCEPTOR_TOPIC_PARTITIONS: 1
+      CONFLUENT_METRICS_TOPIC_REPLICATION: 1
+      PORT: 9021
+
+
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
