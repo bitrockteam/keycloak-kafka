@@ -1,5 +1,6 @@
 package com.github.snuk87.keycloak.kafka;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.jboss.logging.Logger;
@@ -8,8 +9,9 @@ import org.keycloak.events.EventListenerProvider;
 import org.keycloak.events.EventListenerProviderFactory;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
+import org.keycloak.provider.ServerInfoAwareProviderFactory;
 
-public class KafkaEventListenerProviderFactory implements EventListenerProviderFactory {
+public class KafkaEventListenerProviderFactory implements EventListenerProviderFactory, ServerInfoAwareProviderFactory {
 
 	private static final Logger LOG = Logger.getLogger(KafkaEventListenerProviderFactory.class);
 	private static final String ID = "kafka";
@@ -80,5 +82,12 @@ public class KafkaEventListenerProviderFactory implements EventListenerProviderF
 	@Override
 	public void close() {
 		// ignore
+	}
+
+	@Override
+	public Map<String, String> getOperationalInfo() {
+		Map<String, String> ret = new LinkedHashMap<>();
+		ret.put("theme-name", getId());
+		return ret;
 	}
 }
