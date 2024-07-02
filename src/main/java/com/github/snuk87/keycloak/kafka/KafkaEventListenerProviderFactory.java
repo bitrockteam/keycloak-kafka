@@ -3,6 +3,7 @@ package com.github.snuk87.keycloak.kafka;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.apache.kafka.clients.producer.Producer;
 import org.jboss.logging.Logger;
 import org.keycloak.Config.Scope;
 import org.keycloak.events.EventListenerProvider;
@@ -16,23 +17,18 @@ public class KafkaEventListenerProviderFactory implements EventListenerProviderF
 	private static final Logger LOG = Logger.getLogger(KafkaEventListenerProviderFactory.class);
 	private static final String ID = "kafka";
 
-	private KafkaEventListenerProvider instance;
-
 	private String bootstrapServers;
 	private String topicEvents;
 	private String topicAdminEvents;
 	private String clientId;
 	private String[] events;
 	private Map<String, Object> kafkaProducerProperties;
+	private Producer<String, String> producer;
 
 	@Override
 	public EventListenerProvider create(KeycloakSession session) {
-		if (instance == null) {
-			instance = new KafkaEventListenerProvider(bootstrapServers, clientId, topicEvents, events, topicAdminEvents,
-					kafkaProducerProperties, new KafkaStandardProducerFactory());
-		}
-
-		return instance;
+		return new KafkaEventListenerProvider(bootstrapServers, clientId, topicEvents, events, topicAdminEvents,
+				producer, session);
 	}
 
 	@Override
@@ -72,6 +68,8 @@ public class KafkaEventListenerProviderFactory implements EventListenerProviderF
 		}
 
 		kafkaProducerProperties = KafkaProducerConfig.init(config);
+		KafkaStandardProducerFactory factory = new KafkaStandardProducerFactory();
+		producer = factory.createProducer(clientId, bootstrapServers, kafkaProducerProperties);
 	}
 
 	@Override

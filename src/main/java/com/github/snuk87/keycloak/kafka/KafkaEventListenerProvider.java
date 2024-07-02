@@ -1,6 +1,7 @@
 package com.github.snuk87.keycloak.kafka;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -19,6 +20,9 @@ import org.keycloak.events.admin.AdminEvent;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.RealmModel;
+import org.keycloak.models.UserModel;
 
 public class KafkaEventListenerProvider implements EventListenerProvider {
 
@@ -34,12 +38,15 @@ public class KafkaEventListenerProvider implements EventListenerProvider {
 
 	private ObjectMapper mapper;
 
+	private KeycloakSession session;
+
 	public KafkaEventListenerProvider(String bootstrapServers, String clientId, String topicEvents, String[] events,
-			String topicAdminEvents, Map<String, Object> kafkaProducerProperties, KafkaProducerFactory factory) {
+			String topicAdminEvents, Producer<String, String> producer, KeycloakSession session) {
 		this.topicEvents = topicEvents;
 		this.events = new ArrayList<>();
 		this.topicAdminEvents = topicAdminEvents;
-
+		this.session = session;
+		this.producer = producer;
 		for (String event : events) {
 			try {
 				EventType eventType = EventType.valueOf(event.toUpperCase());
@@ -49,7 +56,7 @@ public class KafkaEventListenerProvider implements EventListenerProvider {
 			}
 		}
 
-		producer = factory.createProducer(clientId, bootstrapServers, kafkaProducerProperties);
+		//producer = factory.createProducer(clientId, bootstrapServers, kafkaProducerProperties);
 		mapper = new ObjectMapper();
 	}
 
@@ -66,6 +73,7 @@ public class KafkaEventListenerProvider implements EventListenerProvider {
 	public void onEvent(Event event) {
 		if (events.contains(event.getType())) {
 			try {
+				addUsernameToUserEventIfNotPresent(event);
 				produceEvent(mapper.writeValueAsString(event), topicEvents);
 			} catch (JsonProcessingException | ExecutionException | TimeoutException e) {
 				LOG.error(e.getMessage(), e);
@@ -73,6 +81,29 @@ public class KafkaEventListenerProvider implements EventListenerProvider {
 				LOG.error(e.getMessage(), e);
 				Thread.currentThread().interrupt();
 			}
+		}
+	}
+
+	private void addUsernameToUserEventIfNotPresent(Event event) {
+		if(event.getDetails() == null) {
+			event.setDetails(new HashMap<>());
+		}
+		if (!event.getDetails().containsKey("username")) {
+			String userID = event.getUserId();
+			String realmID =  event.getRealmId();
+
+			RealmModel realmModel = session.realms()
+					.getRealmsStream()
+					.filter(realm -> (realm.isEnabled() && realmID.equals(realm.getId())))
+					.findFirst()
+					.orElseThrow(() -> new RuntimeException("Can't find enabled REALM " + realmID));
+			UserModel user = session.users().getUserById(realmModel, userID);
+            LOG.info("username found: " + user.getUsername() + " in REALM: " + realmModel.getName());
+			event.getDetails().put("username", user.getUsername());
+			LOG.info("username field added event.detail");
+		}
+		else {
+			LOG.info("username field present in event.detail");
 		}
 	}
 
