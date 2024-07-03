@@ -4,11 +4,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 
 import org.apache.kafka.clients.producer.MockProducer;
+import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.serialization.Serializer;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.keycloak.component.ComponentModel;
@@ -16,85 +21,106 @@ import org.keycloak.events.Event;
 import org.keycloak.events.EventType;
 import org.keycloak.events.admin.AdminEvent;
 import org.keycloak.models.*;
-import org.keycloak.provider.InvalidationHandler;
-import org.keycloak.provider.Provider;
-import org.keycloak.services.clientpolicy.ClientPolicyManager;
-import org.keycloak.sessions.AuthenticationSessionProvider;
-import org.keycloak.vault.VaultTranscriber;
 import org.mockito.Mockito;
 
 class KafkaEventListenerProviderTests {
-/*
+
 	private KafkaEventListenerProvider listener;
-	private KafkaProducerFactory factory;
 
 	private KeycloakSession mockKeycloakSession = Mockito.mock(KeycloakSession.class);
 
+	private Producer<String, String> mockProducer = Mockito.mock(Producer.class);
 
 	@BeforeEach
-	void setUp() throws Exception {
-		factory = new KafkaMockProducerFactory();
-
-		listener = new KafkaEventListenerProvider("", "", "", new String[]{"REGISTER"}, "admin-events", Map.of(),
-				factory,mockKeycloakSession);
+	void setUp() {
+		Serializer<String> stringSerializer = new StringSerializer();
+		listener = new KafkaEventListenerProvider("", "", "",
+				new String[]{"REGISTER"}, "admin-events", mockProducer, mockKeycloakSession);
 	}
 
 	@Test
-	void shouldProduceEventWhenTypeIsDefined() throws Exception {
+	void shouldProduceEventWhenTypeIsDefinedAndUsernamePresent() throws Exception {
 		Event event = new Event();
 		event.setType(EventType.REGISTER);
-		MockProducer<?, ?> producer = getProducerUsingReflection();
-		RealmProvider mockRealmProvider = Mockito.mock(RealmProvider.class);
-        RealmModel mockRealmModel = Mockito.mock(RealmModel.class);
-		UserProvider mockUserProvider = Mockito.mock(UserProvider.class);
-		UserModel mockUserModel = Mockito.mock(UserModel.class);
+		HashMap<String, String> details = new HashMap<>();
+		details.put("username", "username");
+		event.setDetails(details);
 
-		Mockito.when(mockKeycloakSession.realms()).thenReturn(mockRealmProvider);
-		Mockito.when(mockRealmProvider.getRealmByName(Mockito.any())).thenReturn(mockRealmModel);
-		Mockito.when(mockKeycloakSession.users()).thenReturn(mockUserProvider);
-		Mockito.when(mockUserProvider.getUserByEmail(Mockito.any(), Mockito.any())).thenReturn(mockUserModel);
+		RecordMetadata recordMetadata = Mockito.mock(RecordMetadata.class);
+
+		Mockito.when(recordMetadata.topic()).thenReturn("MOCK_TOPIC");
+		Mockito.when(mockProducer.send(Mockito.any())).thenReturn(CompletableFuture.completedFuture(recordMetadata));
 
 	    listener.onEvent(event);
 
-		assertEquals(1, producer.history().size());
+		Mockito.verify(mockProducer, Mockito.times(1)).send(Mockito.any());
 	}
+
+	@Test
+	void shouldProduceEventAndSetUsernameWhenTypeIsDefinedAndUsernameNotPresent() throws Exception {
+		final String REALM_ID = "REALM_ID";
+		Event event = new Event();
+		event.setType(EventType.REGISTER);
+		event.setRealmId(REALM_ID);
+
+		// Mocks declaration
+		RealmProvider mockRealmProvider = Mockito.mock(RealmProvider.class);
+		RealmModel mockRealmModel = Mockito.mock(RealmModel.class);
+		UserProvider mockUserProvider = Mockito.mock(UserProvider.class);
+		UserModel mockUserModel = Mockito.mock(UserModel.class);
+		RecordMetadata recordMetadata = Mockito.mock(RecordMetadata.class);
+
+		//Mocks instrumentation
+		Mockito.when(mockKeycloakSession.realms()).thenReturn(mockRealmProvider);
+		Mockito.when(mockRealmModel.getId()).thenReturn(REALM_ID);
+		Mockito.when(mockRealmModel.isEnabled()).thenReturn(true);
+		Mockito.when(mockRealmProvider.getRealmsStream()).thenReturn(List.of(mockRealmModel).stream());
+		Mockito.when(mockKeycloakSession.users()).thenReturn(mockUserProvider);
+		Mockito.when(mockUserProvider.getUserById(Mockito.any(), Mockito.any())).thenReturn(mockUserModel);
+
+		Mockito.when(recordMetadata.topic()).thenReturn("MOCK_TOPIC");
+		Mockito.when(mockProducer.send(Mockito.any())).thenReturn(CompletableFuture.completedFuture(recordMetadata));
+
+		listener.onEvent(event);
+
+        assertTrue(event.getDetails().containsKey("username"));
+		Mockito.verify(mockProducer, Mockito.times(1)).send(Mockito.any());
+	}
+
 
 	@Test
 	void shouldDoNothingWhenTypeIsNotDefined() throws Exception {
 		Event event = new Event();
 		event.setType(EventType.CLIENT_DELETE);
-		MockProducer<?, ?> producer = getProducerUsingReflection();
 
 		listener.onEvent(event);
 
-		assertTrue(producer.history().isEmpty());
+		Mockito.verifyNoInteractions(mockProducer);
 	}
 
 	@Test
 	void shouldProduceEventWhenTopicAdminEventsIsNotNull() throws Exception {
 		AdminEvent event = new AdminEvent();
-		MockProducer<?, ?> producer = getProducerUsingReflection();
+		RecordMetadata recordMetadata = Mockito.mock(RecordMetadata.class);
+
+		Mockito.when(recordMetadata.topic()).thenReturn("MOCK_TOPIC");
+		Mockito.when(mockProducer.send(Mockito.any())).thenReturn(CompletableFuture.completedFuture(recordMetadata));
+
 
 		listener.onEvent(event, false);
 
-		assertEquals(1, producer.history().size());
+		Mockito.verify(mockProducer, Mockito.times(1)).send(Mockito.any());
 	}
+
 
 	@Test
 	void shouldDoNothingWhenTopicAdminEventsIsNull() throws Exception {
-		listener = new KafkaEventListenerProvider("", "", "", new String[] { "REGISTER" }, null, Map.of(), factory, null);
+		listener = new KafkaEventListenerProvider("", "", "", new String[] { "REGISTER" },
+				null, mockProducer, mockKeycloakSession);
 		AdminEvent event = new AdminEvent();
-		MockProducer<?, ?> producer = getProducerUsingReflection();
 
 		listener.onEvent(event, false);
 
-		assertTrue(producer.history().isEmpty());
+		Mockito.verifyNoInteractions(mockProducer);
 	}
-
-	private MockProducer<?, ?> getProducerUsingReflection() throws Exception {
-		Field producerField = KafkaEventListenerProvider.class.getDeclaredField("producer");
-		producerField.setAccessible(true);
-		return (MockProducer<?, ?>) producerField.get(listener);
-	}
-*/
 }

@@ -55,8 +55,6 @@ public class KafkaEventListenerProvider implements EventListenerProvider {
 				LOG.debug("Ignoring event >" + event + "<. Event does not exist.");
 			}
 		}
-
-		//producer = factory.createProducer(clientId, bootstrapServers, kafkaProducerProperties);
 		mapper = new ObjectMapper();
 	}
 
@@ -100,7 +98,7 @@ public class KafkaEventListenerProvider implements EventListenerProvider {
 			UserModel user = session.users().getUserById(realmModel, userID);
             LOG.info("username found: " + user.getUsername() + " in REALM: " + realmModel.getName());
 			event.getDetails().put("username", user.getUsername());
-			LOG.info("username field added event.detail");
+			LOG.info("username field added in event.detail");
 		}
 		else {
 			LOG.info("username field present in event.detail");
